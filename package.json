@@ -4,23 +4,53 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npx prisma generate && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:generate": "npx prisma generate",
+    "db:push": "npx prisma db push",
+    "db:seed": "npx tsx prisma/seed.ts",
+    "db:studio": "npx prisma studio",
+    "db:reset": "npx prisma db push --force-reset && npx tsx prisma/seed.ts",
+    "setup": "npx prisma generate && npx prisma db push && npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@radix-ui/react-slot": "^1.0.0",
+    "@radix-ui/react-tabs": "^1.1.21",
+    "bcryptjs": "^2.4.3",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "date-fns": "^3.0.0",
+    "jose": "^5.0.0",
+    "lucide-react": "^0.400.0",
+    "next": "14.2.35",
+    "prisma": "^6.0.0",
     "react": "^18",
     "react-dom": "^18",
-    "next": "14.2.35"
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.35"
+    "tsx": "^4.0.0",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "unrs-resolver@1.12.2": true
   }
 }

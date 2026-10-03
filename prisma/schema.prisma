@@ -1,0 +1,380 @@
+// Trucking Company Management System - Database Schema
+// Uses SQLite for local development, easily migrated to PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER & AUTH
+// ============================================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String
+  role          String   @default("ASSISTANT") // OWNER, ASSISTANT, DRIVER
+  phone         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  auditLogs     AuditLog[]
+  approvals     Approval[]
+  notifications Notification[]
+}
+
+// ============================================================================
+// DRIVERS & VEHICLES
+// ============================================================================
+
+model Driver {
+  id              String   @id @default(cuid())
+  name            String
+  cdlNumber       String?
+  cdlExpiry       DateTime?
+  medicalCardExp  DateTime?
+  phone           String?
+  email           String?
+  emergencyContact String?
+  emergencyPhone  String?
+  payRate         Float    @default(0.30) // Percentage of gross (0.30 = 30%)
+  status          String   @default("ACTIVE") // ACTIVE, INACTIVE
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  loads           Load[]
+  settlements     Settlement[]
+  documents       Document[]
+}
+
+model Vehicle {
+  id               String   @id @default(cuid())
+  unitNumber       String   @unique
+  vin              String?
+  plateNumber      String?
+  plateState       String?
+  year             Int?
+  make             String?
+  model            String?
+  type             String?  // TRUCK, TRAILER
+  insuranceExpiry  DateTime?
+  registrationExp  DateTime?
+  currentMileage   Int?
+  status           String   @default("ACTIVE") // ACTIVE, INACTIVE, MAINTENANCE
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  loads            Load[]
+  expenses         Expense[]
+  documents        Document[]
+}
+
+// ============================================================================
+// LOADS
+// ============================================================================
+
+model Load {
+  id              String   @id @default(cuid())
+  loadNumber      String   @unique
+  broker          String
+  brokerContact   String?
+  brokerPhone     String?
+  brokerEmail     String?
+
+  // Locations
+  pickupLocation  String
+  pickupCity      String?
+  pickupState     String?
+  deliveryLocation String
+  deliveryCity    String?
+  deliveryState   String?
+
+  // Dates
+  pickupDate      DateTime
+  deliveryDate    DateTime?
+  deliveredAt     DateTime?
+
+  // Assignment
+  driverId        String?
+  driver          Driver?  @relation(fields: [driverId], references: [id])
+  vehicleId       String?
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  // Financials
+  grossRate       Float
+  ratePerMile     Float?
+  loadedMiles     Int?
+  deadheadMiles   Int?
+  accessorials    Float    @default(0)
+  lumperFee       Float    @default(0)
+  fuelCost        Float    @default(0)
+  tolls           Float    @default(0)
+  otherCosts      Float    @default(0)
+
+  // Status
+  status          String   @default("BOOKED") // BOOKED, IN_TRANSIT, DELIVERED, INVOICED, PAID, CANCELLED
+
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  documents       Document[]
+  settlement      Settlement?
+  commission      Commission?
+  invoice         Invoice?
+  expenses        Expense[]
+}
+
+// ============================================================================
+// DRIVER SETTLEMENTS
+// ============================================================================
+
+model Settlement {
+  id              String   @id @default(cuid())
+  loadId          String   @unique
+  load            Load     @relation(fields: [loadId], references: [id])
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+
+  grossPay        Float    // Load gross rate
+  driverRate      Float    // e.g., 0.30 for 30%
+  driverShare     Float    // Calculated: grossPay * driverRate
+  advances        Float    @default(0)
+  reimbursements  Float    @default(0)
+  deductions      Float    @default(0)
+  balanceOwed     Float    // driverShare - advances - deductions + reimbursements
+
+  paymentStatus   String   @default("PENDING") // PENDING, APPROVED, PAID
+  paymentDate     DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+
+  weekStart       DateTime? // For weekly settlement grouping
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// DISPATCH COMMISSION
+// ============================================================================
+
+model Commission {
+  id              String   @id @default(cuid())
+  loadId          String   @unique
+  load            Load     @relation(fields: [loadId], references: [id])
+
+  dispatcherName  String   @default("Michael")
+  commissionRate  Float    @default(0.10) // 10%
+  grossRate       Float    // Load gross
+  amountDue       Float    // grossRate * commissionRate
+
+  paymentStatus   String   @default("PENDING") // PENDING, APPROVED, PAID
+  paymentDate     DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// DOCUMENTS
+// ============================================================================
+
+model Document {
+  id              String   @id @default(cuid())
+  name            String
+  type            String   // RATE_CONFIRMATION, BOL, POD, LUMPER_RECEIPT, INVOICE, PICKUP_PHOTO, DELIVERY_PHOTO, RECEIPT, CDL, MEDICAL_CARD, INSURANCE, REGISTRATION, OTHER
+  filePath        String?  // Local file path
+  fileSize        Int?
+  mimeType        String?
+  status          String   @default("MISSING") // MISSING, UPLOADED, VERIFIED
+
+  // Optional relations
+  loadId          String?
+  load            Load?    @relation(fields: [loadId], references: [id])
+  driverId        String?
+  driver          Driver?  @relation(fields: [driverId], references: [id])
+  vehicleId       String?
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  complianceId    String?
+  compliance      ComplianceItem? @relation(fields: [complianceId], references: [id])
+  expenseId       String?
+  expense         Expense? @relation(fields: [expenseId], references: [id])
+
+  uploadedBy      String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// ACCOUNTS RECEIVABLE (INVOICES)
+// ============================================================================
+
+model Invoice {
+  id              String   @id @default(cuid())
+  invoiceNumber   String   @unique
+  loadId          String   @unique
+  load            Load     @relation(fields: [loadId], references: [id])
+
+  broker          String
+  invoiceDate     DateTime
+  dueDate         DateTime
+  amount          Float
+  amountReceived  Float    @default(0)
+
+  paymentStatus   String   @default("UNPAID") // UNPAID, PARTIAL, PAID, OVERDUE
+  dateReceived    DateTime?
+  daysOverdue     Int      @default(0)
+
+  factoringCompany String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// COMPLIANCE CALENDAR
+// ============================================================================
+
+model ComplianceItem {
+  id              String   @id @default(cuid())
+  title           String
+  type            String   // MCS150, INSURANCE, OPERATING_AUTHORITY, DRUG_TESTING, CDL_EXPIRY, MEDICAL_CARD, VEHICLE_REGISTRATION, IFTA, IRP, HVUT, OTHER
+  description     String?
+  dueDate         DateTime
+  completedDate   DateTime?
+  status          String   @default("UPCOMING") // UPCOMING, DUE_SOON, OVERDUE, COMPLETED
+  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  assignedTo      String?
+
+  // Related entity
+  driverId        String?
+  vehicleId       String?
+
+  reminderDays    String   @default("30,15,7,1") // Days before due to remind
+  notes           String?
+  externalUrl     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  documents       Document[]
+}
+
+// ============================================================================
+// EXPENSES
+// ============================================================================
+
+model Expense {
+  id              String   @id @default(cuid())
+  description     String
+  category        String   // FUEL, MAINTENANCE, INSURANCE, OVERHEAD, TOLLS, LUMPER, DISPATCHER_FEES, DRIVER_ADVANCES, OTHER
+  amount          Float
+  date            DateTime
+  vendor          String?
+  reference       String?  // Receipt number, invoice number, etc.
+
+  // Allocation
+  loadId          String?
+  load            Load?    @relation(fields: [loadId], references: [id])
+  vehicleId       String?
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  isOverhead      Boolean  @default(false)
+
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  documents       Document[]
+}
+
+// ============================================================================
+// RESEARCH & NOTES
+// ============================================================================
+
+model ResearchNote {
+  id              String   @id @default(cuid())
+  title           String
+  category        String   // FMCSA_DOT, SOFTWARE, BOX_TRUCK, FREIGHT_SOURCES, WEBSITE_IT, OTHER
+  content         String
+  status          String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
+  priority        String   @default("MEDIUM")
+  externalUrl     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// APPROVAL WORKFLOW
+// ============================================================================
+
+model Approval {
+  id              String   @id @default(cuid())
+  type            String   // PAYMENT, SETTLEMENT, COMMISSION, LOAD_ACCEPT, COMPANY_INFO, FILING
+  entityType      String   // Settlement, Commission, Load, etc.
+  entityId        String
+  description     String
+
+  status          String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  requestedBy     String
+  requestedAt     DateTime @default(now())
+
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewer        User?    @relation(fields: [reviewedBy], references: [id])
+  reviewNotes     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  action          String   // CREATE, UPDATE, DELETE, APPROVE, REJECT, LOGIN, EXPORT
+  entityType      String   // Load, Settlement, Invoice, etc.
+  entityId        String?
+  description     String
+  changes         String?  // JSON string of old/new values
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  type            String   // COMPLIANCE, INVOICE, DOCUMENT, SETTLEMENT, SYSTEM
+  title           String
+  message         String
+  isRead          Boolean  @default(false)
+  link            String?  // URL to relevant page
+  createdAt       DateTime @default(now())
+}
