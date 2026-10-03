@@ -16,7 +16,14 @@ export async function GET(request: NextRequest) {
 
   // Step 1: Ensure SQLite tables exist using prisma db push
   try {
-    const pushOutput = execSync('npx prisma db push --skip-generate --accept-data-loss', {
+    const path = await import('path');
+    const fs = await import('fs');
+    const prismaBin = path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
+    let cmd = 'npx prisma db push --skip-generate --accept-data-loss';
+    if (fs.existsSync(prismaBin)) {
+      cmd = `node "${prismaBin}" db push --skip-generate --accept-data-loss`;
+    }
+    const pushOutput = execSync(cmd, {
       encoding: 'utf-8',
       env: process.env,
       timeout: 30000,
