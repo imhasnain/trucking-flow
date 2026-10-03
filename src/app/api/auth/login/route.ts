@@ -4,30 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 import { createToken } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
-import path from 'path';
-import fs from 'fs';
-import { execSync } from 'child_process';
-
-function ensureTablesAndUsers() {
-  try {
-    const prismaBin = path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
-    if (fs.existsSync(prismaBin)) {
-      execSync(`node "${prismaBin}" db push --skip-generate --accept-data-loss`, {
-        encoding: 'utf-8',
-        timeout: 30000,
-        env: process.env,
-      });
-    } else {
-      execSync('npx prisma db push --skip-generate --accept-data-loss', {
-        encoding: 'utf-8',
-        timeout: 30000,
-        env: process.env,
-      });
-    }
-  } catch (e) {
-    console.error('Auto db push error:', e);
-  }
-}
+import { initDatabase } from '@/lib/init-db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,49 +20,25 @@ export async function POST(request: NextRequest) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    // Find user
+    // Find user (with automatic auto-initialization fallback)
     let user = null;
     try {
       user = await prisma.user.findUnique({
         where: { email: cleanEmail },
       });
     } catch (dbErr: any) {
-      console.warn('Initial user lookup failed, attempting schema push:', dbErr?.message);
-      ensureTablesAndUsers();
-      // Retry lookup
+      console.warn('User lookup threw, initializing DB schema:', dbErr?.message);
+      await initDatabase();
       user = await prisma.user.findUnique({
         where: { email: cleanEmail },
       });
     }
 
-    // If user is still not found, check if database is empty and seed if attempting demo login
+    // If user table exists but user is null, check if DB is empty and initialize
     if (!user) {
       const userCount = await prisma.user.count().catch(() => 0);
       if (userCount === 0) {
-        console.log('Seeding initial owner and assistant accounts...');
-        const ownerPassword = await bcrypt.hash('owner123', 10);
-        const assistantPassword = await bcrypt.hash('assistant123', 10);
-
-        await prisma.user.create({
-          data: {
-            email: 'sam@truckflow.com',
-            passwordHash: ownerPassword,
-            name: 'Sam',
-            role: 'OWNER',
-            phone: '555-0100',
-          },
-        });
-
-        await prisma.user.create({
-          data: {
-            email: 'dh@truckflow.com',
-            passwordHash: assistantPassword,
-            name: 'DH',
-            role: 'ASSISTANT',
-            phone: '555-0200',
-          },
-        });
-
+        await initDatabase();
         user = await prisma.user.findUnique({
           where: { email: cleanEmail },
         });
